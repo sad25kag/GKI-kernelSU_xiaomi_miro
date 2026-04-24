@@ -48,8 +48,22 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip
 
-      - name: Upload Image
+      - name: Package with AnyKernel3
+        run: |
+          # Clone template AnyKernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+          rm -rf AnyKernel3/.git AnyKernel3/README.md
+          
+          # Masukkan file Image hasil compile ke folder AnyKernel3
+          cp kernel-source/out/arch/arm64/boot/Image AnyKernel3/
+          
+          # Buat file ZIP
+          cd AnyKernel3
+          zip -r9 "../Kernel-Miro-KSU-Official.zip" . -x ".git*"
+
+      - name: Upload Flashable Kernel
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Miro-Official-KSU
-          path: kernel-source/out/arch/arm64/boot/Image
+          name: Kernel-Miro-KSU-Official
+          path: Kernel-Miro-KSU-Official.zip
+
