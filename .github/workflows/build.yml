@@ -1,0 +1,32 @@
+name: Build Miro GKI Vendor
+on:
+  workflow_dispatch: # Memungkinkan kamu menjalankan build secara manual
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Build Script
+        uses: actions/checkout@v4
+
+      - name: Setup Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc build-essential flex bison lld llvm-dev libssl-dev ccache
+          
+      - name: Download Toolchain (AOSP Clang)
+        run: |
+          mkdir clang
+          cd clang
+          # Menggunakan Clang r522830 yang stabil untuk Android 16 / SM8750
+          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522830.tar.gz
+          tar -xf clang-r522830.tar.gz
+
+      - name: Clone Kernel Source & KernelSU
+        run: |
+          # Langkah ini akan kita isi dengan link source vendor miro di tahap berikutnya
+          echo "Menunggu link source kernel vendor..."
+
+      - name: Create AnyKernel3 Package
+        run: |
+          echo "Menyiapkan packing AnyKernel3..."
