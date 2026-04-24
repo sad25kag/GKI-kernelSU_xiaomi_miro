@@ -12,12 +12,11 @@ jobs:
       - name: Setup Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison lld llvm-dev libssl-dev ccache libelf-dev
+          sudo apt-get install -y bc build-essential flex bison lld llvm-dev libssl-dev ccache libelf-dev libncurses-dev
           
       - name: Download Toolchain (AOSP Clang)
         run: |
           mkdir clang
-          # Pakai link prebuilt yang lebih stabil dan lengkap
           curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522830.tar.gz -o clang.tar.gz
           tar -xf clang.tar.gz -C clang
           echo "$(pwd)/clang/bin" >> $GITHUB_PATH
@@ -33,29 +32,33 @@ jobs:
       - name: Setup Official KernelSU
         run: |
           cd kernel-source
+          # Memasukkan KernelSU Official (Polosan Root)
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
         run: |
           cd kernel-source
           
-          # AUTO-DETECT DEFCONFIG: Mencari file yang mengandung kata 'miro' atau 'sun' di folder configs
-          DEFCONFIG=$(find arch/arm64/configs/vendor -name "*miro*" -o -name "*sun*" | head -n 1 | xargs basename)
-          echo "Menggunakan Defconfig: $DEFCONFIG"
+          # MENCARI DEFCONFIG SECARA OTOMATIS
+          # Script ini akan cari di seluruh folder configs mana yang ada nama 'miro' atau 'sun'
+          CONF_PATH=$(find arch/arm64/configs -name "*miro*" -o -name "*sun*" | head -n 1)
           
-          # Proses Compile
-          make O=out ARCH=arm64 vendor/$DEFCONFIG
+          if [ -z "$CONF_PATH" ]; then
+            echo "Defconfig tidak ketemu, pakai gki_defconfig sebagai cadangan"
+            DEFCONFIG="gki_defconfig"
+          else
+            # Ambil path relatif setelah folder 'configs/'
+            DEFCONFIG=$(echo $CONF_PATH | sed 's/.*configs\///')
+          fi
+          
+          echo "---> MENGGUNAKAN DEFCONFIG: $DEFCONFIG"
+          
+          # Proses Compile dengan LLVM 1 (Standar Android Modern)
+          make O=out ARCH=arm64 $DEFCONFIG
           make -j$(nproc --all) O=out ARCH=arm64 \
             CC=clang \
-            HOSTCC=clang \
-            HOSTCXX=clang++ \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
-            LD=ld.lld \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
             LLVM=1 \
             LLVM_IAS=1
 
@@ -63,7 +66,13 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3
           rm -rf AnyKernel3/.git
-          cp kernel-source/out/arch/arm64/boot/Image AnyKernel3/
+          # Cek hasil compile dan masukkan ke zip
+          if [ -f kernel-source/out/arch/arm64/boot/Image ]; then
+            cp kernel-source/out/arch/arm64/boot/Image AnyKernel3/
+          else
+            echo "Image tidak ditemukan! Build mungkin gagal."
+            exit 1
+          fi
           cd AnyKernel3 && zip -r9 "../Kernel-Miro-KSU-Official.zip" .
 
       - name: Upload Flashable Kernel
