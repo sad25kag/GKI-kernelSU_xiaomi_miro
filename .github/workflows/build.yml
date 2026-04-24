@@ -25,14 +25,16 @@ jobs:
 
 
       - name: Clone Kernel Source
-        run: |
-          # Clone langsung dari branch bsp-miro-v-oss (Xiaomi Official)
-          git clone --depth=1 -b bsp-miro-v-oss https://github.com/MiCode/Xiaomi_Kernel_OpenSource kernel-source
-          
+        uses: actions/checkout@v4
+        with:
+          repository: MiCode/Xiaomi_Kernel_OpenSource
+          ref: bsp-miro-v-oss
+          path: kernel-source
+          fetch-depth: 1
+
       - name: Setup Official KernelSU
         run: |
           cd kernel-source
-          # Kernel 6.6 biasanya sudah support KSU via setup.sh
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
       - name: Build Kernel
@@ -40,8 +42,8 @@ jobs:
           export PATH=${{ env.CLANG_PATH }}:$PATH
           cd kernel-source
           
-          # Gunakan defconfig khusus vendor miro (sun adalah nama board-nya)
-          # Biasanya di Xiaomi SM8750 namanya vendor/sun_defconfig atau vendor/miro_defconfig
+          # Cek defconfig: Xiaomi Miro (sun) biasanya pakai miro_defconfig atau sun_defconfig
+          # Kita coba prioritaskan miro_defconfig sesuai codename
           make O=out ARCH=arm64 vendor/miro_defconfig || make O=out ARCH=arm64 vendor/sun_defconfig
           
           make -j$(nproc --all) O=out ARCH=arm64 \
@@ -53,7 +55,6 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip
-
 
       - name: Package with AnyKernel3
         run: |
