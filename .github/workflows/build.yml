@@ -12,17 +12,15 @@ jobs:
       - name: Setup Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison lld llvm-dev libssl-dev ccache
+          sudo apt-get install -y bc build-essential flex bison lld llvm-dev libssl-dev ccache libelf-dev
           
-      - name: Download Toolchain (Proton Clang)
+      - name: Download Toolchain (AOSP Clang)
         run: |
           mkdir clang
-          cd clang
-          # Pakai Proton Clang terbaru yang lebih stabil buat di-download
-          curl -LO https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
-          tar -xf master.tar.gz --strip-components=1
-          echo "CLANG_PATH=$(pwd)/bin" >> $GITHUB_ENV
-
+          # Pakai link prebuilt yang lebih stabil dan lengkap
+          curl -LSs https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522830.tar.gz -o clang.tar.gz
+          tar -xf clang.tar.gz -C clang
+          echo "$(pwd)/clang/bin" >> $GITHUB_PATH
 
       - name: Clone Kernel Source
         uses: actions/checkout@v4
@@ -39,39 +37,37 @@ jobs:
 
       - name: Build Kernel
         run: |
-          export PATH=${{ env.CLANG_PATH }}:$PATH
           cd kernel-source
           
-          # Cek defconfig: Xiaomi Miro (sun) biasanya pakai miro_defconfig atau sun_defconfig
-          # Kita coba prioritaskan miro_defconfig sesuai codename
-          make O=out ARCH=arm64 vendor/miro_defconfig || make O=out ARCH=arm64 vendor/sun_defconfig
+          # AUTO-DETECT DEFCONFIG: Mencari file yang mengandung kata 'miro' atau 'sun' di folder configs
+          DEFCONFIG=$(find arch/arm64/configs/vendor -name "*miro*" -o -name "*sun*" | head -n 1 | xargs basename)
+          echo "Menggunakan Defconfig: $DEFCONFIG"
           
+          # Proses Compile
+          make O=out ARCH=arm64 vendor/$DEFCONFIG
           make -j$(nproc --all) O=out ARCH=arm64 \
             CC=clang \
+            HOSTCC=clang \
+            HOSTCXX=clang++ \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
             LD=ld.lld \
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip
+            STRIP=llvm-strip \
+            LLVM=1 \
+            LLVM_IAS=1
 
       - name: Package with AnyKernel3
         run: |
-          # Clone template AnyKernel3
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3
-          rm -rf AnyKernel3/.git AnyKernel3/README.md
-          
-          # Masukkan file Image hasil compile ke folder AnyKernel3
+          rm -rf AnyKernel3/.git
           cp kernel-source/out/arch/arm64/boot/Image AnyKernel3/
-          
-          # Buat file ZIP
-          cd AnyKernel3
-          zip -r9 "../Kernel-Miro-KSU-Official.zip" . -x ".git*"
+          cd AnyKernel3 && zip -r9 "../Kernel-Miro-KSU-Official.zip" .
 
       - name: Upload Flashable Kernel
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Miro-KSU-Official
           path: Kernel-Miro-KSU-Official.zip
-
