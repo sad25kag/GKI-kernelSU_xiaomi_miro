@@ -22,39 +22,42 @@ jobs:
           echo "$(pwd)/clang/bin" >> $GITHUB_PATH
 
       - name: Clone Kernel Source
-        uses: actions/checkout@v4
-        with:
-          repository: MiCode/Xiaomi_Kernel_OpenSource
-          ref: bsp-miro-v-oss
-          path: kernel-source
-          fetch-depth: 1
+        run: |
+          # Pakai git clone manual biar kita bisa lihat progressnya
+          git clone --depth=1 -b bsp-miro-v-oss https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git kernel-source
 
       - name: Setup Official KernelSU
         run: |
-          cd kernel-source
-          # Download KSU Source
+          # Cari folder di mana Makefile berada (buat jaga-jaga kalau foldernya nested)
+          KROOT=$(find $(pwd)/kernel-source -name Makefile | xargs grep -l "KERNELVERSION" | head -n 1 | xargs dirname)
+          echo "KERNEL_ROOT=$KROOT" >> $GITHUB_ENV
+          
+          cd $KROOT
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-          # Fix Recursive Dependency (Hapus dulu kalau sudah ada, baru tambah satu kali saja)
-          sed -i '/source "drivers\/kernelsu\/Kconfig"/d' drivers/Kconfig
-          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          # Fix Recursive Dependency
+          if [ -f drivers/Kconfig ]; then
+            sed -i '/source "drivers\/kernelsu\/Kconfig"/d' drivers/Kconfig
+            echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          fi
 
       - name: Build Kernel
         run: |
-          cd kernel-source
+          cd ${{ env.KERNEL_ROOT }}
           
-          # DEFCONFIG FIX: Berdasarkan log kamu, filenya ada di vendor/sun_defconfig
-          # Kita pakai path lengkap agar make tidak bingung
-          if [ -f arch/arm64/configs/vendor/sun_defconfig ]; then
-              DEFCONFIG="vendor/sun_defconfig"
-          elif [ -f arch/arm64/configs/vendor/miro_defconfig ]; then
-              DEFCONFIG="vendor/miro_defconfig"
-          else
-              DEFCONFIG="gki_defconfig"
+          # CARI DEFCONFIG DI MANA SAJA
+          # Berdasarkan board Snapdragon 8 Elite (sun)
+          CONF_PATH=$(find . -name "sun_defconfig" -o -name "miro_defconfig" | head -n 1)
+          
+          if [ -z "$CONF_PATH" ]; then
+            echo "Miro/Sun config not found, searching for any vendor config..."
+            CONF_PATH=$(find arch/arm64/configs/vendor -name "*_defconfig" | head -n 1)
           fi
           
-          echo "---> MENGGUNAKAN DEFCONFIG: $DEFCONFIG"
+          # Ambil nama file saja tanpa path lengkap untuk 'make'
+          DEFCONFIG=$(basename $CONF_PATH)
+          echo "---> FIX DEFCONFIG: $DEFCONFIG"
           
-          # Proses Compile (Full LLVM + Skip Warnings yang bikin error)
+          # Proses Compile (Full LLVM + No Warnings)
           make O=out ARCH=arm64 $DEFCONFIG
           make -j$(nproc --all) O=out ARCH=arm64 \
             CC=clang \
@@ -68,17 +71,15 @@ jobs:
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3
-          rm -rf AnyKernel3/.git
-          # Cari file Image secara rekursif biar pasti ketemu
-          IMG_PATH=$(find kernel-source/out/arch/arm64/boot -name "Image" | head -n 1)
-          if [ -n "$IMG_PATH" ]; then
-            cp $IMG_PATH AnyKernel3/
-            echo "Kernel Image ditemukan di $IMG_PATH"
+          # Cari file Image hasil compile
+          IMG=$(find ${{ env.KERNEL_ROOT }}/out -name "Image" | head -n 1)
+          if [ -f "$IMG" ]; then
+            cp "$IMG" AnyKernel3/
+            cd AnyKernel3 && zip -r9 "../Kernel-Miro-KSU-Official.zip" .
           else
-            echo "ERROR: Kernel Image tidak ditemukan!"
+            echo "FILE IMAGE TIDAK KETEMU!"
             exit 1
           fi
-          cd AnyKernel3 && zip -r9 "../Kernel-Miro-KSU-Official.zip" .
 
       - name: Upload Flashable Kernel
         uses: actions/upload-artifact@v4
