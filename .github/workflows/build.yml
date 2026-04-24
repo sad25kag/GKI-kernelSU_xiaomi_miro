@@ -14,13 +14,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc build-essential flex bison lld llvm-dev libssl-dev ccache
           
-      - name: Download Toolchain (AOSP Clang)
+      - name: Download Toolchain (Proton Clang)
         run: |
           mkdir clang
           cd clang
-          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522830.tar.gz
-          tar -xf clang-r522830.tar.gz
+          # Pakai Proton Clang terbaru yang lebih stabil buat di-download
+          curl -LO https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
+          tar -xf master.tar.gz --strip-components=1
           echo "CLANG_PATH=$(pwd)/bin" >> $GITHUB_ENV
+
 
       - name: Clone Kernel Source
         run: |
