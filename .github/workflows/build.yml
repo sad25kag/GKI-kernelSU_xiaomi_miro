@@ -32,9 +32,9 @@ jobs:
       - name: Setup Official KernelSU
         run: |
           cd kernel-source
-          # Gunakan cara manual agar tidak terjadi 'recursive dependency'
+          # Download KSU Source
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-          # Fix Kconfig recursive issue
+          # Fix Recursive Dependency (Hapus dulu kalau sudah ada, baru tambah satu kali saja)
           sed -i '/source "drivers\/kernelsu\/Kconfig"/d' drivers/Kconfig
           echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
@@ -42,22 +42,19 @@ jobs:
         run: |
           cd kernel-source
           
-          # NGINTIP DEFCONFIG (Biar kita tahu nama aslinya apa)
-          echo "Listing available configs..."
-          ls arch/arm64/configs/vendor/ || ls arch/arm64/configs/
-          
-          # AUTO-DETECT DEFCONFIG (Mencari yg paling cocok untuk Miro/Sun)
-          CONF_PATH=$(find arch/arm64/configs -name "*miro*" -o -name "*sun*" | head -n 1)
-          if [ -z "$CONF_PATH" ]; then
-            echo "Miro/Sun config not found, falling back to gki_defconfig"
-            DEFCONFIG="gki_defconfig"
+          # DEFCONFIG FIX: Berdasarkan log kamu, filenya ada di vendor/sun_defconfig
+          # Kita pakai path lengkap agar make tidak bingung
+          if [ -f arch/arm64/configs/vendor/sun_defconfig ]; then
+              DEFCONFIG="vendor/sun_defconfig"
+          elif [ -f arch/arm64/configs/vendor/miro_defconfig ]; then
+              DEFCONFIG="vendor/miro_defconfig"
           else
-            DEFCONFIG=$(basename $CONF_PATH)
+              DEFCONFIG="gki_defconfig"
           fi
           
           echo "---> MENGGUNAKAN DEFCONFIG: $DEFCONFIG"
           
-          # Proses Compile (Full LLVM)
+          # Proses Compile (Full LLVM + Skip Warnings yang bikin error)
           make O=out ARCH=arm64 $DEFCONFIG
           make -j$(nproc --all) O=out ARCH=arm64 \
             CC=clang \
@@ -65,17 +62,20 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             LLVM=1 \
             LLVM_IAS=1 \
+            KCFLAGS="-w" \
             ALLOW_MISSING_DTB_OVERLAY=1
 
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3
           rm -rf AnyKernel3/.git
-          # Pastikan file Image ada
-          if [ -f kernel-source/out/arch/arm64/boot/Image ]; then
-            cp kernel-source/out/arch/arm64/boot/Image AnyKernel3/
+          # Cari file Image secara rekursif biar pasti ketemu
+          IMG_PATH=$(find kernel-source/out/arch/arm64/boot -name "Image" | head -n 1)
+          if [ -n "$IMG_PATH" ]; then
+            cp $IMG_PATH AnyKernel3/
+            echo "Kernel Image ditemukan di $IMG_PATH"
           else
-            echo "ERROR: Kernel Image not found!"
+            echo "ERROR: Kernel Image tidak ditemukan!"
             exit 1
           fi
           cd AnyKernel3 && zip -r9 "../Kernel-Miro-KSU-Official.zip" .
